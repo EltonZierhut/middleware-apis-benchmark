@@ -1,5 +1,6 @@
 results/*
 !results/.gitkeep
+!results/20261105-110216/
 rails-middleware/vendor/
 rails-middleware/.bundle/
 rails-middleware/tmp/

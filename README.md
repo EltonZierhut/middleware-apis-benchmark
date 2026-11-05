@@ -208,6 +208,17 @@ Pontos de leitura:
 
 ---
 
+## Resultados
+
+| Execução | Ambiente | Análise |
+|---|---|---|
+| 05/11/2026 | notebook WSL2, 12 CPUs, 2 CPUs / 1 GB por middleware | [análise para RFC](results/20261105-110216/ANALISE.md) · [relatório bruto](results/20261105-110216/report.md) |
+
+> A execução de 05/11/2026 não registrou latência: o k6 não teve permissão de escrita na pasta de resultados.
+> A análise usa boot, footprint e as amostras de CPU e memória.
+
+---
+
 ## O que o benchmark não responde
 
 Coloque estes pontos na mesma tabela da decisão:
