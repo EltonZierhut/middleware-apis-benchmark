@@ -1,0 +1,9 @@
+results/*
+!results/.gitkeep
+rails-middleware/vendor/
+rails-middleware/.bundle/
+rails-middleware/tmp/
+rails-middleware/log/
+*.log
+.DS_Store
+__pycache__/

@@ -1,0 +1,43 @@
+# Os dois middlewares recebem exatamente o mesmo orçamento de CPU e memória.
+# O run.sh sobe UM middleware por vez para que não disputem a máquina.
+x-limits: &limits
+  cpus: "${MW_CPUS:-2}"
+  mem_limit: "${MW_MEM:-1g}"
+
+services:
+  upstream:
+    build: ./upstream-mock
+    environment:
+      BASE_LATENCY_MS: "${BASE_LATENCY_MS:-30}"
+      JITTER_MS: "${JITTER_MS:-20}"
+      SLOW_RATE: "${SLOW_RATE:-0}"
+      SLOW_MS: "${SLOW_MS:-1000}"
+      ERROR_RATE: "${ERROR_RATE:-0}"
+    ports: ["9000:9000"]
+
+  go:
+    build: ./go-middleware
+    <<: *limits
+    environment:
+      UPSTREAM_URL: http://upstream:9000
+      GOMAXPROCS: "${MW_CPUS:-2}"   # Go < 1.25 não lê o limite de CPU do cgroup
+    ports: ["8080:8080"]
+    depends_on: [upstream]
+
+  rails:
+    build: ./rails-middleware
+    <<: *limits
+    environment:
+      UPSTREAM_URL: http://upstream:9000
+      PORT: "3000"
+      WEB_CONCURRENCY: "${MW_CPUS:-2}"        # 1 processo Puma por CPU
+      RAILS_MAX_THREADS: "${RAILS_MAX_THREADS:-16}"
+    ports: ["3000:3000"]
+    depends_on: [upstream]
+
+  k6:
+    image: grafana/k6:latest
+    profiles: ["tools"]
+    volumes:
+      - ./k6:/scripts:ro
+      - ./results:/results
