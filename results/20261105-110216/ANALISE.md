@@ -142,6 +142,40 @@ com a taxa porque o overhead fixo do processo se dilui.
 | Go | acompanhou 2.000 req/s em todos os cenários, usando no máximo ~76% do orçamento de CPU | 2.000 req/s com 8% do orçamento |
 | Rails | saturou entre 500 e 1.000 req/s; teto estimado de ~700–800 req/s | 2.000 req/s com ~51% do orçamento |
 
+#### 4.6 Atendimento da taxa solicitada
+
+As métricas que mostram isso diretamente são o rps real (`http_reqs.rate`) e as iterações descartadas
+(`dropped_iterations`). As duas vêm do resumo do k6, que não foi gravado nesta execução (ver a limitação no início da
+seção 4). O atendimento foi então estimado por três sinais:
+
+- **A CPU acompanha a taxa ou trava:** quando o servidor dá conta, a CPU cresce na mesma proporção que a taxa pedida.
+- **A rodada durou 60 s:** as rodadas normais têm cerca de 30 amostras de CPU. As saturadas têm de 41 a 45, porque o
+  k6 espera a fila de requisições terminar.
+- **Rps estimado:** CPU em regime ÷ custo de CPU por requisição medido a 500 req/s, taxa em que o servidor dava conta
+  (~1,08 ms no `list` e ~1,24 ms no `show` e no `mixed`).
+
+| Cenário | Taxa pedida (req/s) | Go | Rails |
+|---|---:|---|---|
+| health | 100 a 2.000 | ✅ atendeu todas | ✅ atendeu todas |
+| list | 100 a 500 | ✅ | ✅ |
+| list | 1.000 | ✅ | ❌ ~690 req/s |
+| list | 2.000 | ✅ | ❌ ~750 req/s |
+| show | 100 a 500 | ✅ | ✅ |
+| show | 1.000 | ✅ | ❌ ~700 req/s |
+| show | 2.000 | ✅ | ❌ ~720 req/s |
+| mixed | 100 a 500 | ✅ | ✅ |
+| mixed | 1.000 | ✅ | ❌ ~700 req/s |
+| mixed | 2.000 | ✅ | ❌ ~730 req/s |
+
+- **Go:** atendeu as 20 taxas pedidas. Todas as rodadas duraram 60 s e a CPU cresceu junto com a carga, chegando no
+  máximo a ~152% dos 200% disponíveis.
+- **Rails:** atendeu tudo até 500 req/s e o `health` até 2.000 req/s. Nas rotas que chamam o upstream, travou em
+  cerca de 700 a 750 req/s, perto do limite de ~800 req/s que as 32 threads permitem com ~40 ms de upstream
+  (seção 5.2).
+
+Os ✅ e ❌ e os números do Rails são estimativas, com margem de uns ±10%, e não medições. A confirmação exata depende
+de repetir a bateria com os resumos do k6 gravados.
+
 ### 5. Análise dos resultados
 
 #### 5.1 Boot e footprint
