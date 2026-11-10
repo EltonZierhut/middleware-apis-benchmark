@@ -1,10 +1,19 @@
 #!/usr/bin/env bash
-# Garante que Go e Rails devolvem exatamente o mesmo JSON antes de comparar performance.
-# Requer: jq, upstream + go + rails no ar (docker compose up -d upstream go rails),
+# Garante que Go, Rails e Node devolvem exatamente o mesmo JSON antes de comparar performance.
+# O Go é a referência; cada implementação em IMPLS é comparada com ele.
+# Requer: jq, upstream + implementações no ar (docker compose up -d upstream go rails node),
 # e o mock SEM falhas/lentidão (SLOW_RATE=0 ERROR_RATE=0).
+#
+# Uso:
+#   ./parity.sh                 # compara rails e node com go
+#   IMPLS="node" ./parity.sh    # só node
 set -euo pipefail
-GO="${GO_URL:-http://localhost:8080}"
-RAILS="${RAILS_URL:-http://localhost:3000}"
+declare -A URL=(
+  [go]="${GO_URL:-http://localhost:8080}"
+  [rails]="${RAILS_URL:-http://localhost:3000}"
+  [node]="${NODE_URL:-http://localhost:3001}"
+)
+IMPLS="${IMPLS:-rails node}"
 
 paths=(
   "/health"
@@ -20,14 +29,23 @@ paths=(
   "/platform/contacts/nao-existe"
 )
 
+# imprime "<status>\n<json normalizado>"
+fetch() {
+  local r; r=$(curl -s -w '\n%{http_code}' "$1")
+  echo "${r##*$'\n'}"; echo "${r%$'\n'*}" | jq -S .
+}
+
 fail=0
 for p in "${paths[@]}"; do
-  a=$(curl -s -w '\n%{http_code}' "$GO$p");    sa=${a##*$'\n'}; ba=$(echo "${a%$'\n'*}" | jq -S .)
-  b=$(curl -s -w '\n%{http_code}' "$RAILS$p"); sb=${b##*$'\n'}; bb=$(echo "${b%$'\n'*}" | jq -S .)
-  if [[ "$sa" == "$sb" && "$ba" == "$bb" ]]; then
-    echo "OK    $sa $p"
-  else
-    echo "DIFF  go=$sa rails=$sb $p"; diff <(echo "$ba") <(echo "$bb") | head -20; fail=1
-  fi
+  ref=$(fetch "${URL[go]}$p"); sref=${ref%%$'\n'*}
+  for impl in $IMPLS; do
+    got=$(fetch "${URL[$impl]}$p"); sgot=${got%%$'\n'*}
+    if [[ "$ref" == "$got" ]]; then
+      printf 'OK    %-6s %s %s\n' "$impl" "$sgot" "$p"
+    else
+      printf 'DIFF  %-6s go=%s %s=%s %s\n' "$impl" "$sref" "$impl" "$sgot" "$p"
+      diff <(echo "$ref") <(echo "$got") | head -20; fail=1
+    fi
+  done
 done
 exit $fail

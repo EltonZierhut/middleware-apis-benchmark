@@ -1,9 +1,9 @@
 # middleware-apis-benchmark
 
-Benchmark para decidir a stack (**Go** ou **Ruby on Rails**) de um **middleware de APIs**.
+Benchmark para decidir a stack (**Go**, **Ruby on Rails** ou **Node.js**) de um **middleware de APIs**.
 
-Este repositório tem duas implementações equivalentes do middleware, um mock dos serviços de domínio e
-scripts de carga que medem as duas nas mesmas condições.
+Este repositório tem três implementações equivalentes do middleware, um mock dos serviços de domínio e
+scripts de carga que medem as três nas mesmas condições.
 
 ---
 
@@ -38,10 +38,10 @@ Performance não é o único critério. Veja [O que o benchmark não responde](#
 ## Arquitetura do benchmark
 
 ```
-k6 ──► middleware (go | rails) ──► upstream-mock (Contatos · Automação · Multicanalidade)
+k6 ──► middleware (go | rails | node) ──► upstream-mock (Contatos · Automação · Multicanalidade)
 ```
 
-O Kong fica de fora de propósito: ele é igual nas duas opções e só somaria ruído à medição.
+O Kong fica de fora de propósito: ele é igual em todas as opções e só somaria ruído à medição.
 
 | Rota | Representa no projeto | Estressa |
 |---|---|---|
@@ -57,8 +57,10 @@ Filtros aceitos: `filter[lead_stage]`, `filter[tag]`, `filter[email_domain]`. `p
 - **Rails 8 em modo API (`rails-middleware/`):** só Action Controller, Puma (1 processo por CPU, 16 threads),
   YJIT, jemalloc, `net-http-persistent` (keep-alive) e `concurrent-ruby` no fan-out.
   É um Rails configurado como iria para produção, não um Rails de propósito lento.
+- **Node.js 22 (`node-middleware/`):** só stdlib (`node:http`, `node:cluster`), `http.Agent` com keep-alive,
+  `Promise.allSettled` no fan-out e 1 processo por CPU (`WEB_CONCURRENCY`, como o Puma). Zero dependências.
 
-As duas devolvem o mesmo JSON. O `parity.sh` confere isso antes de qualquer medição.
+As três devolvem o mesmo JSON. O `parity.sh` confere isso antes de qualquer medição.
 
 ---
 
@@ -113,8 +115,8 @@ O primeiro build do Rails baixa as gems e leva alguns minutos.
 ### 1. Conferir paridade dos contratos
 
 ```bash
-docker compose up -d upstream go rails
-./parity.sh
+docker compose up -d upstream go rails node
+./parity.sh            # compara rails e node com o go; IMPLS="node" ./parity.sh para só uma
 docker compose down
 ```
 
@@ -126,7 +128,7 @@ Todas as linhas devem sair `OK`. Se aparecer `DIFF`, corrija antes de medir: com
 ./run.sh
 ```
 
-Com os padrões leva cerca de 40 minutos. O relatório sai em `results/<data-hora>/report.md` e `report.csv`.
+Com os padrões (3 stacks × 4 cenários × 5 taxas) leva cerca de 65 minutos. O relatório sai em `results/<data-hora>/report.md` e `report.csv`.
 
 ### Exemplos
 
@@ -141,19 +143,20 @@ SLOW_RATE=0.1 ERROR_RATE=0.05 SCENARIOS="show" TAG=resiliencia ./run.sh
 MW_CPUS=1 MW_MEM=512m TAG=pod-pequeno ./run.sh
 
 # só uma das stacks
-TARGETS=rails ./run.sh
+TARGETS=node ./run.sh
 ```
 
 ### Parâmetros
 
 | Variável | Padrão | Efeito |
 |---|---|---|
-| `TARGETS` | `go rails` | quais implementações medir |
+| `TARGETS` | `go rails node` | quais implementações medir |
 | `SCENARIOS` | `health list show mixed` | `mixed` = 70% list / 30% show |
 | `RATES` | `100 250 500 1000 2000` | taxas em req/s, modelo aberto (`constant-arrival-rate`) |
 | `DURATION` / `WARMUP` | `60s` / `20s` | duração de cada rodada / aquecimento (YJIT, pools de conexão) |
 | `MW_CPUS` / `MW_MEM` | `2` / `1g` | orçamento de cada middleware; use o tamanho do pod de produção |
 | `RAILS_MAX_THREADS` | `16` | threads por processo Puma |
+| — | — | Node usa `WEB_CONCURRENCY = MW_CPUS` processos no cluster |
 | `BASE_LATENCY_MS` / `JITTER_MS` | `30` / `20` | latência simulada dos domínios; calibre com o p50 real das APIs internas |
 | `SLOW_RATE` / `SLOW_MS` | `0` / `1000` | fração de chamadas lentas à Automação e quanto demoram |
 | `ERROR_RATE` | `0` | fração de chamadas à Multicanalidade que retornam 503 |
@@ -174,6 +177,9 @@ cd go-middleware && UPSTREAM_URL=http://localhost:9000 go run . &   # porta 8080
 cd rails-middleware && bundle install
 RAILS_ENV=production RUBY_YJIT_ENABLE=1 UPSTREAM_URL=http://localhost:9000 PORT=3000 \
   bundle exec puma -C config/puma.rb
+
+# Node (22+)
+cd node-middleware && UPSTREAM_URL=http://localhost:9000 WEB_CONCURRENCY=2 node server.js   # porta 3001
 ```
 
 ---
@@ -214,8 +220,9 @@ Pontos de leitura:
 |---|---|---|
 | 05/11/2026 | notebook WSL2, 12 CPUs, 2 CPUs / 1 GB por middleware | [análise para RFC](results/20261105-110216/ANALISE.md) · [relatório bruto](results/20261105-110216/report.md) |
 
-> A execução de 05/11/2026 não registrou latência: o k6 não teve permissão de escrita na pasta de resultados.
-> A análise usa boot, footprint e as amostras de CPU e memória.
+> A execução de 05/11/2026 (só Go e Rails) não registrou latência: o k6 não teve permissão de escrita na pasta de
+> resultados. A análise usa boot, footprint e as amostras de CPU e memória. O `run.sh` agora libera a escrita na
+> pasta e avisa quando um resumo do k6 não for gravado.
 
 ---
 
@@ -224,7 +231,7 @@ Pontos de leitura:
 Coloque estes pontos na mesma tabela da decisão:
 
 - **Fluência do time** em cada stack e quem vai manter a camada. Ela é temporária, mas pode durar anos.
-- **Ferramental de contrato OpenAPI:** `oapi-codegen` / `ogen` (Go) contra `rswag` / `committee` (Rails).
+- **Ferramental de contrato OpenAPI:** `oapi-codegen` / `ogen` (Go), `rswag` / `committee` (Rails) e `openapi-typescript` / `express-openapi-validator` ou Fastify com JSON Schema (Node).
 - **Compatibilidade do legado (fase futura):** se envolver reaproveitar código ou serializers do monolito Rails,
   isso favorece Rails. Se for só tradução de contrato, a stack pesa menos.
 - **Operação:** observabilidade, bibliotecas de resiliência já usadas na empresa, imagem base e pipeline de deploy.
@@ -238,9 +245,10 @@ Coloque estes pontos na mesma tabela da decisão:
 upstream-mock/        mock dos domínios (Go), com latência, lentidão e erros configuráveis
 go-middleware/        implementação em Go
 rails-middleware/     implementação em Rails 8 API
+node-middleware/      implementação em Node.js 22 (stdlib)
 k6/load.js            cenários de carga
 run.sh                orquestra build, boot, aquecimento, carga e coleta de métricas
 report.py             gera report.md e report.csv
-parity.sh             confere que as duas implementações devolvem o mesmo JSON
+parity.sh             confere que as três implementações devolvem o mesmo JSON
 results/              saída das execuções (ignorada pelo git)
 ```

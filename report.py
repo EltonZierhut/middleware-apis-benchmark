@@ -55,7 +55,9 @@ def main(outdir):
         })
     rows.sort(key=lambda r: (r["scenario"], r["rate"], r["target"]))
 
-    metas = [json.load(open(f)) for f in sorted(glob.glob(os.path.join(outdir, "*-meta.json")))]
+    order = {"go": 0, "rails": 1, "node": 2}
+    metas = sorted((json.load(open(f)) for f in glob.glob(os.path.join(outdir, "*-meta.json"))),
+                   key=lambda m: order.get(m["target"], 99))
 
     with open(os.path.join(outdir, "report.csv"), "w", newline="") as fh:
         if rows:
@@ -64,7 +66,9 @@ def main(outdir):
             w.writerows(rows)
 
     env = open(os.path.join(outdir, "env.txt")).read() if os.path.exists(os.path.join(outdir, "env.txt")) else ""
-    lines = ["# Go vs Rails — middleware de APIs", "", "```", env.strip(), "```", "",
+    names = {"go": "Go", "rails": "Rails", "node": "Node.js"}
+    title = " vs ".join(names.get(m["target"], m["target"]) for m in metas) or "Benchmark"
+    lines = [f"# {title} — middleware de APIs", "", "```", env.strip(), "```", "",
              "## Boot e footprint", "", "| impl | boot (ms) | imagem (MB) | memória ociosa |", "|---|---:|---:|---:|"]
     for mt in metas:
         lines.append(f"| {mt['target']} | {mt['boot_ms']} | {mt['image_mb']} | {mt['idle_mem']} |")

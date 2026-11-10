@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Executa a bateria completa: para cada implementação (go, rails), sobe só ela,
+# Executa a bateria completa: para cada implementação (go, rails, node), sobe só ela,
 # mede tempo de boot, aquece, roda cada taxa de carga coletando CPU/memória
 # e grava tudo em results/. No fim gera results/report.md.
 #
@@ -10,7 +10,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-TARGETS="${TARGETS:-go rails}"
+TARGETS="${TARGETS:-go rails node}"
 SCENARIOS="${SCENARIOS:-health list show mixed}"
 RATES="${RATES:-100 250 500 1000 2000}"
 DURATION="${DURATION:-60s}"
@@ -18,11 +18,13 @@ WARMUP="${WARMUP:-20s}"
 TAG="${TAG:-$(date +%Y%m%d-%H%M%S)}"
 OUTDIR="results/$TAG"
 mkdir -p "$OUTDIR"
+# o k6 roda no container como uid 12345: precisa poder gravar os resumos aqui
+chmod a+rwx "$OUTDIR" results
 
-declare -A PORT=( [go]=8080 [rails]=3000 )
+declare -A PORT=( [go]=8080 [rails]=3000 [node]=3001 )
 
 echo "==> build"
-docker compose build upstream go rails >/dev/null
+docker compose build upstream $TARGETS >/dev/null
 docker compose pull k6 >/dev/null 2>&1 || true
 
 echo "==> upstream mock"
@@ -71,6 +73,7 @@ for t in $TARGETS; do
       docker compose run --rm -e TARGET="http://$t:${PORT[$t]}" -e SCENARIO="$s" -e RATE="$r" \
         -e DURATION="$DURATION" -e OUT="/results/$TAG/$name.json" k6 run --quiet /scripts/load.js >/dev/null 2>&1 || true
       kill "$spid" 2>/dev/null || true; wait "$spid" 2>/dev/null || true
+      [[ -s "$OUTDIR/$name.json" ]] || echo "    AVISO: k6 não gravou $OUTDIR/$name.json"
       sleep 3   # deixa filas e GC assentarem entre as rodadas
     done
   done
