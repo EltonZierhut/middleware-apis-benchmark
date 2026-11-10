@@ -1,0 +1,9 @@
+{
+  "name": "node-middleware",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Middleware de APIs em Node.js (só stdlib), mesmo contrato das versões Go e Rails",
+  "main": "server.js",
+  "engines": { "node": ">=22" },
+  "scripts": { "start": "node server.js" }
+}
